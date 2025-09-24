@@ -34,23 +34,32 @@ def read_pdf_file(file_path: str) -> str:
         print(f"Error reading PDF file: {e}")
         return ""
 
-def parse_wcart_manual_to_json(file_path: str):
-    doc = Document(file_path)
+def parse_wcart_manual_to_json(content: str) -> Dict[str, Any]:
     data = {}
     current_section = None
+    lines = content.split('\n')
     
-    for paragraph in doc.paragraphs:
-        text = paragraph.text.strip()
+    # Regex to detect headings (e.g., "SECTION 1", "INTRODUCTION")
+    # This assumes headings are in all caps and not excessively long.
+    heading_pattern = re.compile(r'^[A-Z0-9\s\-:]+$')
+
+    for line in lines:
+        text = line.strip()
         if not text:
             continue
         
-        # detect headings (any Word "Heading" style)
-        if paragraph.style.name.startswith("Heading"):
+        # Heuristic for detecting a heading
+        if heading_pattern.match(text) and len(text) < 100:
             current_section = text
             data[current_section] = {"content": "", "subsections": {}}
         else:
             if current_section:
                 data[current_section]["content"] += text + "\n"
+            # Optional: handle content that appears before the first heading
+            else:
+                if "Introduction" not in data:
+                    data["Introduction"] = {"content": "", "subsections": {}}
+                data["Introduction"]["content"] += text + "\n"
     
     return data
 
@@ -145,12 +154,10 @@ def convert_formatting(text: str) -> str:
     return text
 
 def main():
-    # Read the .docx file
     file_path = 'Copy of WCART USER MANUAL.pdf'
+    content = ""
     
     try:
-        # First try reading as .docx
-        content = read_docx_file(file_path)
         ext = os.path.splitext(file_path)[1].lower()
 
         if ext == ".docx":
@@ -158,23 +165,12 @@ def main():
         elif ext == ".pdf":
             content = read_pdf_file(file_path)
         else:
-            print("Unsupported file type")
+            print(f"Unsupported file type: {ext}")
             return
         
         if not content:
-            print("No content found in .docx file. Trying alternative approach...")
-            # Try reading as plain text with different encodings
-            for encoding in ['utf-8', 'latin-1', 'cp1252']:
-                try:
-                    with open(file_path, 'r', encoding=encoding) as file:
-                        content = file.read()
-                    print(f"Successfully read with {encoding} encoding")
-                    break
-                except UnicodeDecodeError:
-                    continue
-            else:
-                print("Could not read the file with any encoding.")
-                return
+            print(f"No content could be extracted from '{file_path}'.")
+            return
                 
     except FileNotFoundError:
         print(f"File '{file_path}' not found.")
@@ -182,7 +178,6 @@ def main():
         return
     
     # Parse the content to JSON
-    content = read_pdf_file(file_path)
     wcart_json = parse_wcart_manual_to_json(content)
     
     # Save to JSON file
